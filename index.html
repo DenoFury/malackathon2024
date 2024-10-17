@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investiga sobre embalses</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #0d0d0d;
+            color: white;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        .intro {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .container-custom {
+            padding: 50px;
+            text-align: center;
+        }
+
+        #map {
+            height: 500px;
+            width: 100%;
+            margin: 50px 0;
+        }
+
+        .footer {
+            padding: 20px;
+            text-align: center;
+            background-color: #111;
+        }
+
+        .feature {
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .feature div {
+            width: 30%;
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+        }
+    </style>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">MAGIK Hackathon 2024</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container-custom" id="embalses">
+            <h1>Investiga sobre embalses</h1>
+            <p class="intro">Descubre información sobre los embalses en España usando nuestro mapa interactivo.</p>
+            <form id="locationForm" style="margin: 20px auto;">
+                <label for="province">Provincia:</label>
+                <input type="text" id="province" placeholder="Ejemplo: Madrid" required>
+                <button type="submit" class="btn btn-primary">Actualizar Mapa</button>
+            </form>
+            <div id="map"></div>
+            <div class="feature">
+                <div>
+                    <i class="feature-icon">️</i>
+                    <h3>Accesible</h3>
+                    <p>Nuestro sistema es fácil de usar y accesible desde cualquier dispositivo.</p>
+                </div>
+                <div>
+                    <i class="feature-icon"></i>
+                    <h3>Seguridad</h3>
+                    <p>Toda la información está protegida y accesible solo para usuarios autorizados.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>&copy; 2024 MAGIK Hackathon 2024. Todos los derechos reservados.</p>
+    </footer>
+
+    <script>
+        var map = L.map('map').setView([40.416775, -3.703790], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        var markers = []; // Array para guardar los marcadores
+
+        // Función para calcular la distancia entre dos puntos
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            var R = 6371; // Radio de la Tierra en kilómetros
+            var dLat = (lat2 - lat1) * Math.PI / 180;
+            var dLon = (lon2 - lon1) * Math.PI / 180;
+            var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // Distancia en kilómetros
+        }
+
+        // Función para obtener las coordenadas de una provincia
+        function obtenerCoordenadasProvincia(provincia, callback) {
+            $.ajax({
+                url: `https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(provincia)}&format=json&addressdetails=1`,
+                type: 'GET',
+                success: function(data) {
+                    if (data && data.length > 0) {
+                        // Retornar las coordenadas de la primera coincidencia
+                        callback(data[0].lat, data[0].lon);
+                    } else {
+                        alert('No se encontraron coordenadas para la provincia especificada.');
+                    }
+                },
+                error: function() {
+                    alert('Error al obtener las coordenadas de la provincia.');
+                }
+            });
+        }
+
+        // Función para obtener todos los embalses y filtrar por distancia
+        function obtenerEmbalses(userLat, userLon) {
+            $.ajax({
+                url: 'https://gb3f9d2cf03707a-magik.adb.eu-madrid-1.oraclecloudapps.com/ords/deniz/listadoutf/',
+                type: 'GET',
+                success: function(response) {
+                    // Limpiar marcadores existentes
+                    markers.forEach(function(marker) {
+                        map.removeLayer(marker);
+                    });
+                    markers = []; // Resetear el array de marcadores
+
+                    // Agregar embalses y filtrar por distancia
+                    function agregarEmbalses(data) {
+                        data.items.forEach(function(embalse) {
+                            if (embalse.x && embalse.y) {
+                                var embalseLat = parseFloat(embalse.x.replace(',', '.'));
+                                var embalseLon = parseFloat(embalse.y.replace(',', '.'));
+                                var distancia = calcularDistancia(userLat, userLon, embalseLat, embalseLon);
+
+                                if (distancia <= 100) { // Filtrar por distancia
+                                    var marker = L.marker([embalseLat, embalseLon]).addTo(map)
+                                        .bindPopup(`<b>${embalse.nombre}</b><br>Embalse: ${embalse.embalse}<br>Provincia: ${embalse.provincia}`);
+                                    markers.push(marker); // Agregar marcador al array
+                                }
+                            }
+                        });
+                    }
+
+                    agregarEmbalses(response); // Agregar los embalses de la primera página
+
+                    // Manejar la paginación si hay más páginas
+                    function obtenerPaginasSiguientes(nextLink) {
+                        if (nextLink) {
+                            $.ajax({
+                                url: nextLink.href,
+                                type: 'GET',
+                                success: function(data) {
+                                    agregarEmbalses(data); // Agregar embalses de la siguiente página
+                                    var nextLink = data.links.find(link => link.rel === 'next');
+                                    obtenerPaginasSiguientes(nextLink); // Continuar obteniendo más páginas
+                                },
+                                error: function(error) {
+                                    console.log('Error al obtener más embalses:', error);
+                                }
+                            });
+                        }
+                    }
+
+                    var nextLink = response.links.find(link => link.rel === 'next');
+                    obtenerPaginasSiguientes(nextLink); // Comenzar a obtener páginas siguientes
+                },
+                error: function(error) {
+                    console.log('Error al obtener los datos de la API:', error);
+                }
+            });
+        }
+
+        document.getElementById('locationForm').addEventListener('submit', function(event) {
+            event.preventDefault(); // Evitar el envío del formulario
+
+            var provincia = document.getElementById('province').value;
+
+            obtenerCoordenadasProvincia(provincia, function(userLat, userLon) {
+                map.setView([userLat, userLon], 10); // Centrar el mapa en la provincia
+                obtenerEmbalses(userLat, userLon); // Obtener embalses cerca de la ubicación
+            });
+        });
+    </script>
+</body>
+</html>
